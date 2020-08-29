@@ -1,184 +1,194 @@
 const fs = require("fs");
-const jsonfile = require('jsonfile');
-const { v4: uuidv4 } = require('uuid');
-const _ = require('lodash');
+const jsonfile = require("jsonfile");
+const _ = require("lodash");
+const generateUUID = require("../utils");
+const { Console } = require("console");
 
 class Database {
-    constructor(dbName) {
-        this.dbName = dbName;
+  constructor(dbName) {
+    this.dbName = dbName;
+    this._data = null;
 
-        if(!fs.existsSync(this.dbName)) {
-            this.createNewDatabase();
-        }
+    if (!fs.existsSync(this.dbName) || !Array.isArray(this._readDB())) {
+      this.createNewDatabase();
+    } else {
+      this._readDB();
     }
+  }
 
-    createNewDatabase() {
-        jsonfile.writeFile(this.dbName, [], (err) => {
-            if (err) console.error(err);
-        })
-    }
+  createNewDatabase() {
+    jsonfile.writeFileSync(this.dbName, []);
+    this._readDB();
+  }
 
-    removeDatabase() {
-        fs.close(1, (err) => {
-            if(err) console.error(err);
-            else console.log('database connection closed');
+  _readDB() {
+    this._data = jsonfile.readFileSync(this.dbName);
+    return this._data;
+  }
+
+  _writeToDB(doc, cb) {
+    jsonfile.writeFile(this.dbName, doc, (err, data) => {
+      cb(err, data);
+    });
+  }
+
+  removeDatabase() {
+    fs.close(1, (err) => {
+      if (err) console.error(err);
+      else console.log("database connection closed");
+    });
+    fs.unlink(this.dbName, (err) => {
+      if (err) console.error(err);
+      else console.log("removed", this.dbName);
+    });
+  }
+
+  insert(doc, cb) {
+    if (_.isPlainObject(doc)) {
+      if (!doc._id) {
+        console.log("HERE");
+        this._data.push({
+          ...doc,
+          _id: generateUUID(),
         });
-        fs.unlink(this.dbName, (err) => {
-            if (err) console.error(err);
-            else console.log('removed', this.dbName);
+        jsonfile.writeFile(this.dbName, this._data, (err) => {
+          if (err) {
+            console.log(err);
+          }
+
+          cb(err, this._data);
         });
+      } else {
+        this._data.push({
+          ...doc,
+        });
+        jsonfile.writeFile(this.dbName, this._data, (err) => {
+          if (err) {
+            console.log(err);
+          }
+
+          cb(err, this._data);
+        });
+      }
+    } else {
+      throw new Error("Please provide an object");
     }
 
-    create(value, cb) {
-        jsonfile.readFile(this.dbName, (err, data) => {
-            if (err) {
-                console.log(err);
-            }
+    // if (Array.isArray(doc)) {
+    //   doc.forEach((d) => {
+    //     if (d._id) {
+    //       this._data.push({
+    //         ...d,
+    //       });
+    //       jsonfile.writeFile(this.dbName, this._data, (err) => {
+    //         if (err) {
+    //           console.log(err);
+    //         }
 
-            if(!data) {
-                jsonfile.writeFile(this.dbName, [], (err) => {
-                    if (err) console.error(err);
-                })
-            }
+    //         cb(err, this._data);
+    //       });
+    //     } else {
+    //       this._data.push({
+    //         [],
+    //         _id: generateUUID(),
+    //       });
 
-            else {
-                let id = uuidv4();
-                const newData = {
-                    ...value,
-                    _id: id
-                }
-                data.push(newData);
-                jsonfile.writeFile(this.dbName, data, (err) => {
-                    if(err) {
-                        console.log(err);
-                    }
+    //       console.log("DATA NOW", this._data);
 
-                    cb(err, newData);
-                });
-            }
-        });
+    //       jsonfile.writeFile(this.dbName, this._data, (err) => {
+    //         if (err) {
+    //           console.log(err);
+    //         }
+
+    //         cb(err, this._data);
+    //       });
+    //     }
+    //   });
+    // }
+  }
+  /**
+   *
+   * @param {document} doc
+   * @param {callback} cb
+   */
+  find(doc, cb) {
+    if (!Object.keys(doc).length) {
+      cb(this._data);
+    } else {
+      cb(_.filter(this._data, _.matches(doc)));
     }
+  }
 
-    read(value, query, cb) {
-        let found;
-        jsonfile.readFile(this.dbName, (err, data) => {
-            if (err) console.log(err);
-            else if(_.isPlainObject(value)) {
-                if(_.isEmpty(value)) {
-                    cb(err, data);
-                    return data;
-                }
-                else if(_.some(data, value)) {
-                    found = _.filter(data, _.matches(value));
+  /**
+   *
+   * @param {document} doc
+   * @param {new document} opts
+   * @param {callback} cb
+   */
 
-                } else {
-                }
-            }
+  findOne(doc, cb) {
+    cb(_.find(this._data, doc));
+  }
 
-       /*     else if (value === null) {
-                let found = _(data)
-                    .map(query)
-                    .flatten()
-                    .filter({ name: 'Event' })
-                    .value();
-                console.log('found', found);
-                console.log('here', _.find(data, found));
-            }*/
-            else {
-                throw new Error('ERROR: Please provide an object');
-            }
-            cb(err, found);
-        });
+  // TODO: if opts obj has $set operator, find all the matching objects and update all of their value with the provided one.
+  // TODO: if opts obj hasn't anything(?), find all the matching objects and REPLACE all all of them with the provided one. (check _id)
+  update(doc, opts, cb) {
+    if (opts.$set) {
+      const matches = _.find(this._data, doc);
+      console.log("matches", matches);
+
+      _.assign(doc, opts.$set);
+      console.log("assigned", _.assign(doc, opts.$set));
+    } else {
+      if (_.findIndex(this._data, doc) > -1) {
+        this._data.splice(idx, 1, newDoc);
+        jsonfile.writeFileSync(this.dbName, this._data);
+        cb(this._data);
+      }
     }
+  }
 
+  remove(doc, cb) {
+    const idx = _.findIndex(this._data, doc);
+    if (idx > -1) {
+      console.log("idx", idx);
+      this._data.splice(idx, 1);
 
-
-    readOne(value, query, cb) {
-        let found;
-        jsonfile.readFile(this.dbName, (err, data) => {
-            if (err) console.log(err);
-
-            else if(_.isPlainObject(value)) {
-                if(_.some(data, value)) {
-                    found = _.find(data, _.matches(value));
-                    return found;
-                }
-            }
-            else {
-                found = data.find(x => x._id === value);
-                return found;
-            }
-
-            cb(err, found);
-        });
+      jsonfile.writeFileSync(this.dbName, this._data);
+      cb(this._data);
     }
-
-    remove(value, query, cb) {
-        jsonfile.readFile(this.dbName, (err, data) => {
-            let removedDocuments;
-            if (err) console.log(err);
-            else if(_.isPlainObject(value)) {
-                if(_.isEmpty(value)) {
-                    // Remove all data if value is empty ({}) object
-                    removedDocuments = _.remove(data, function(n) {
-                        return true;
-                    });
-                    jsonfile.writeFileSync(this.dbName, data);
-                }
-                else {
-                    removedDocuments = _.remove(data, value);
-                    jsonfile.writeFileSync(this.dbName, data);
-                }
-            }
-            cb(err, removedDocuments);
-        });
-    }
-
-/*    removeById(value, cb) {
-        let removedDocuments;
-        jsonfile.readFile(this.dbName, (err, data) => {
-            if (err) console.log(err);
-            else if(_.isPlainObject(value)) {
-                console.log( value['_id']);
-                removedDocuments = _.remove(data, function(n) {
-                    return n._id === value['_id'];
-                });
-                jsonfile.writeFileSync(this.dbName, data);
-                return removedDocuments;
-            } else {
-                throw new Error("ERROR: Please provide an object like { _id: ID (ID is string) }");
-            }
-
-            cb(err, removedDocuments);
-        });
-    }*/
-
-    update(document, newData) {
-
-    }
+  }
 }
+const myDB = new Database("test.json");
+// myDB.insert({ test2: "test2", _id: 50 }, (err, data) => {
+//   console.log("new data", data);
+// });
 
-const db = new Database('deneme.json', 5);
-// db.createNewDatabase();
+const myArr = [{ test4: "test4" }, { test5: "test5" }];
 
-db.create({name: 'Green', lastname: "Gy"}, function(err, data) {
-    console.table(data);
+// myArr.forEach((x) => {
+//   myDB.insert(x, (err, data) => {
+//     console.log("inserted", data);
+//   });
+// });
+
+myDB.find({ test3: "test3", _id: 2 }, (data) => {
+  console.log("find", data);
 });
 
+myDB.findOne({ test3: "test3" }, (data) => {
+  console.log("findOne", data);
+});
 
-// db.read('3d783b17-cc8f-44c5-a9eb-76adada34e20');
-// db.read({name: 'Umut', lastname: "Bozdağ", _id: '931ca02e-f13a-47dd-a31f-0eaecf737edc', friends: {friend1: {name: "Oguz", lastname: "Kas"}, friend2: {name: "Asko", lastname: "Seyyir"}}});
-db.read({}, _, (err, data) => {
-    // console.log('READ', err);
-})
-// db.removeDatabase();
+myDB.find({}, (data) => {
+  console.log("ALL DATA", data);
+});
 
-// db.remove({name: 'Umut'});
-/*db.remove({name: 'FooO'}, _, function(err, data)  {
-    console.table(data);
-});*/
+myDB.remove({ test3: "test4" }, (data) => {
+  console.log("removed", data);
+});
 
-fetch()
-
+myDB.update({ _id: 1 }, { $set: { _id: 5 } }, (data) => {
+  console.log("hello", data);
+});
 module.exports = Database;
-
