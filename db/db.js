@@ -2,7 +2,6 @@ const fs = require("fs");
 const jsonfile = require("jsonfile");
 const _ = require("lodash");
 const generateUUID = require("../utils");
-const { Console } = require("console");
 
 class Database {
   constructor(dbName) {
@@ -131,14 +130,20 @@ class Database {
   }
 
   // TODO: if opts obj has $set operator, find all the matching objects and update all of their value with the provided one.
-  // TODO: if opts obj hasn't anything(?), find all the matching objects and REPLACE all all of them with the provided one. (check _id)
+  // TODO: if opts obj hasn't anything(?), find all the matching objects and REPLACE all of them with the provided one. (check _id)
   update(doc, opts, cb) {
     if (opts.$set) {
-      const matches = _.find(this._data, doc);
-      console.log("matches", matches);
+      _.filter(this._data, _.matches(doc)).forEach((d) => {
+        _.assign(d, opts.$set);
+      });
 
-      _.assign(doc, opts.$set);
       console.log("assigned", _.assign(doc, opts.$set));
+
+      console.log("now", this._data);
+
+      jsonfile.writeFileSync(this.dbName, this._data);
+
+      cb(this._data);
     } else {
       if (_.findIndex(this._data, doc) > -1) {
         this._data.splice(idx, 1, newDoc);
@@ -160,7 +165,7 @@ class Database {
   }
 }
 const myDB = new Database("test.json");
-// myDB.insert({ test2: "test2", _id: 50 }, (err, data) => {
+// myDB.insert({ test2: "test2" }, (err, data) => {
 //   console.log("new data", data);
 // });
 
@@ -188,7 +193,9 @@ myDB.remove({ test3: "test4" }, (data) => {
   console.log("removed", data);
 });
 
-myDB.update({ _id: 1 }, { $set: { _id: 5 } }, (data) => {
+myDB.update({ _id: 5 }, (data) => {
   console.log("hello", data);
 });
+
+// myDB.removeDatabase();
 module.exports = Database;
